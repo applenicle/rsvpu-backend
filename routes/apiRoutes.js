@@ -1,50 +1,97 @@
 const express = require('express');
 const router = express.Router();
 const cacheService = require('../services/cacheService');
-const scraper = require('../scraper');
 
 router.get('/groups', (req, res) => {
   try {
-    res.json(cacheService.getGroups());
+    const groups = cacheService.getGroups();
+    res.json({
+      success: true,
+      count: groups.length,
+      data: groups,
+      lastUpdated: cacheService.cache.lastUpdated,
+    });
   } catch (error) {
-    console.error('Error in /groups route:', error);
-    res.status(500).json({ error: 'Failed to load groups' });
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
 router.get('/teachers', (req, res) => {
   try {
-    res.json(cacheService.getTeachers());
+    const teachers = cacheService.getTeachers();
+    res.json({
+      success: true,
+      count: teachers.length,
+      data: teachers,
+      lastUpdated: cacheService.cache.lastUpdated,
+    });
   } catch (error) {
-    console.error('Error in /teachers route:', error);
-    res.status(500).json({ error: 'Failed to load teachers' });
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
-
-router.get('/schedule', (req, res) => {
+router.get('/group/:id/schedule', async (req, res) => {
   try {
-    res.json(cacheService.getSchedule());
-  } catch (error) {
-    console.error('Error in /schedule route:', error);
-    res.status(500).json({ error: 'Failed to load schedule' });
-  }
-});
-
-router.get('/schedule/:type/:id', async (req, res) => {
-  try {
-    const { type, id } = req.params;
-    if (!['group', 'teacher'].includes(type)) {
-      return res.status(400).json({ error: 'Invalid type specified' });
+    const data = await cacheService.getGroupSchedule(req.params.id);
+    if (data.status === 'not_found') {
+      return res.status(404).json({
+        success: false,
+        message: 'Группа не найдена',
+        ...data,
+      });
     }
-
-    const url = `${config.baseUrl}?v_${type === 'group' ? 'gru' : 'prep'}=${id}`;
-    console.log(`Fetching custom schedule from: ${url}`);
-
-    const schedule = await scraper.scrapeCustomSchedule(url);
-    res.json(schedule || []);
+    if (!data.success) {
+      return res.status(500).json(data);
+    }
+    res.json(data);
   } catch (error) {
-    console.error('Error in dynamic schedule route:', error);
-    res.status(500).json({ error: 'Failed to fetch schedule' });
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      group: {
+        id: req.params.id,
+        name: 'Неизвестный группа',
+        exists: false,
+      },
+      schedule: [],
+      lastUpdated: new Date().toISOString(),
+      status: 'error',
+    });
+  }
+});
+
+router.get('/teacher/:id/schedule', async (req, res) => {
+  try {
+    const data = await cacheService.getTeacherSchedule(req.params.id);
+    if (data.status === 'not_found') {
+      return res.status(404).json({
+        success: false,
+        message: 'Преподаватель не найден',
+        ...data,
+      });
+    }
+    if (!data.success) {
+      return res.status(500).json(data);
+    }
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      teacher: {
+        id: req.params.id,
+        name: 'Неизвестный преподаватель',
+        exists: false,
+      },
+      schedule: [],
+      lastUpdated: new Date().toISOString(),
+      status: 'error',
+    });
   }
 });
 
