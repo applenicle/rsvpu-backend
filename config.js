@@ -12,8 +12,15 @@ module.exports = {
   cacheUpdateInterval: 6 * 60 * 60 * 1000,
   timeout: 60000,
   maxAttempts: 3,
-  httpsAgent: {
+  axiosConfig: {
+    httpsAgent: {
+      rejectUnauthorized: false,
+      keepAlive: true,
+    },
+  },
+  sslOptions: {
     rejectUnauthorized: false,
-    keepAlive: true,
+    secureProtocol: 'TLSv1_method',
+    timeout: 10000,
   },
 };

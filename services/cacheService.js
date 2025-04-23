@@ -49,6 +49,23 @@ class CacheService {
     })();
     return this.initializationPromise;
   }
+  async fetchWithRetry(url, attempts = 3) {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const response = await axios.get(url, {
+          httpsAgent: new https.Agent(config.sslOptions),
+          timeout: config.timeout,
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+          },
+        });
+        return response.data;
+      } catch (error) {
+        if (i === attempts - 1) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 2000 * (i + 1)));
+      }
+    }
+  }
   async loadCache() {
     const cachePath = path.join(config.dataDir, config.cacheFile);
     if (fs.existsSync(cachePath)) {

@@ -35,25 +35,18 @@ app.use((err, req, res, next) => {
 });
 
 async function checkSSLCertificate() {
-  const target = new URL(config.groupsListUrl);
   return new Promise((resolve) => {
     const req = https.request(
       {
-        hostname: target.hostname,
+        hostname: 'old.rsvpu.ru',
         port: 443,
         method: 'HEAD',
-        agent: new https.Agent({ rejectUnauthorized: false }),
+        agent: new https.Agent(config.sslOptions),
       },
-      (res) => {
-        resolve(true);
-      },
+      () => resolve(true),
     );
 
-    req.on('error', (e) => {
-      Logger.warn(`SSL certificate error: ${e.message}`);
-      resolve(false);
-    });
-
+    req.on('error', () => resolve(false));
     req.end();
   });
 }
