@@ -12,4 +12,8 @@ module.exports = {
   cacheUpdateInterval: 6 * 60 * 60 * 1000,
   timeout: 60000,
   maxAttempts: 3,
+  httpsAgent: {
+    rejectUnauthorized: false,
+    keepAlive: true,
+  },
 };
