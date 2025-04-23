@@ -6,8 +6,7 @@ const config = require('../config');
 
 const axiosInstance = axios.create({
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-  proxy: config.proxy,
-  timeout: 30000,
+  timeout: 10000,
 });
 
 async function fetchWithRetry(url, attempts = 3) {

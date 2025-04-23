@@ -1,7 +1,7 @@
 const path = require('path');
 
 module.exports = {
-  port: 3000,
+  port: process.env.PORT || 3000,
   baseUrl: 'https://old.rsvpu.ru/mobile/',
   groupsListUrl: 'https://old.rsvpu.ru/mobile/?groups',
   teachersListUrl: 'https://old.rsvpu.ru/mobile/?prep',
@@ -12,9 +12,4 @@ module.exports = {
   cacheUpdateInterval: 6 * 60 * 60 * 1000,
   timeout: 60000,
   maxAttempts: 3,
-  axiosConfig: {
-    httpsAgent: {
-      rejectUnauthorized: false,
-    },
-  },
 };
