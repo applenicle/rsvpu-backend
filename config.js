@@ -17,4 +17,9 @@ module.exports = {
       rejectUnauthorized: false,
     },
   },
+  proxy: {
+    host: '91.238.52.247',
+    port: 8080,
+    protocol: 'http',
+  },
 };
