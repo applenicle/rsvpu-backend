@@ -19,31 +19,25 @@ class CacheService {
     this.isInitialized = false;
     this.initializationPromise = null;
   }
-
   async init() {
     if (this.initializationPromise) {
       return this.initializationPromise;
     }
-
     this.initializationPromise = (async () => {
       try {
         ensureDir(config.dataDir);
-        ensureDir(config.debugDir);
-
         try {
           await this.loadCache();
           Logger.info('Cache loaded successfully');
         } catch (loadError) {
           Logger.warn('Failed to load cache, will fetch fresh data', loadError);
         }
-
         if (this.isEmpty() || this.isCacheStale()) {
           Logger.info('Cache needs update, fetching fresh data');
           await this.updateCache();
         } else {
           Logger.info('Using existing cache');
         }
-
         this.isInitialized = true;
         Logger.info('CacheService initialized successfully');
         return true;
@@ -53,10 +47,8 @@ class CacheService {
         throw error;
       }
     })();
-
     return this.initializationPromise;
   }
-
   async loadCache() {
     const cachePath = path.join(config.dataDir, config.cacheFile);
     if (fs.existsSync(cachePath)) {
@@ -72,7 +64,6 @@ class CacheService {
       Logger.info('No cache file found, will create new one');
     }
   }
-
   async updateCache() {
     try {
       Logger.info('Starting cache update...');
@@ -80,13 +71,11 @@ class CacheService {
         this.retryOperation(() => scrapeGroupsList(), 3),
         this.retryOperation(() => scrapeTeachersList(), 3),
       ]);
-
       this.cache = {
         lastUpdated: new Date().toISOString(),
         groups,
         teachers,
       };
-
       await this.saveCache();
       Logger.info('Cache updated successfully');
     } catch (error) {
@@ -94,7 +83,6 @@ class CacheService {
       throw error;
     }
   }
-
   async retryOperation(operation, maxAttempts = 3) {
     let attempt = 1;
     while (attempt <= maxAttempts) {
@@ -110,7 +98,6 @@ class CacheService {
       }
     }
   }
-
   async saveCache() {
     const cachePath = path.join(config.dataDir, config.cacheFile);
     try {
@@ -121,28 +108,23 @@ class CacheService {
       throw error;
     }
   }
-
   isEmpty() {
     return !this.cache.groups?.length || !this.cache.teachers?.length;
   }
-
   isCacheStale() {
     if (!this.cache.lastUpdated) return true;
     const lastUpdated = new Date(this.cache.lastUpdated);
     const now = new Date();
     return now - lastUpdated > config.cacheUpdateInterval;
   }
-
   getGroups() {
     this.checkInitialized();
     return this.cache.groups;
   }
-
   getTeachers() {
     this.checkInitialized();
     return this.cache.teachers;
   }
-
   async getGroupSchedule(groupId) {
     this.checkInitialized();
     const group = this.cache.groups.find((g) => g.id === groupId);
@@ -160,11 +142,9 @@ class CacheService {
         status: 'not_found',
       };
     }
-
     try {
       Logger.info(`Fetching schedule for group ${groupId} (${group.name})`);
       const schedule = await this.retryOperation(() => this.groupScraper.getSchedule(groupId), 3);
-
       return {
         success: true,
         group: {
@@ -192,7 +172,6 @@ class CacheService {
       };
     }
   }
-
   async getTeacherSchedule(teacherId) {
     this.checkInitialized();
     const teacher = this.cache.teachers.find((t) => t.id === teacherId);
@@ -210,14 +189,12 @@ class CacheService {
         status: 'not_found',
       };
     }
-
     try {
       Logger.info(`Fetching schedule for teacher ${teacherId} (${teacher.name})`);
       const schedule = await this.retryOperation(
         () => this.teacherScraper.getSchedule(teacherId),
         3,
       );
-
       return {
         success: true,
         teacher: {
@@ -245,13 +222,11 @@ class CacheService {
       };
     }
   }
-
   checkInitialized() {
     if (!this.isInitialized) {
       throw new Error('CacheService not initialized. Call init() first.');
     }
   }
-
   async cleanup() {
     try {
       await this.groupScraper.close();

@@ -5,69 +5,67 @@ class TeacherScraper extends BaseScraper {
     super('teacher');
   }
 
-  async parseSchedule(page) {
-    return await page.evaluate(() => {
-      const result = [];
-      const dayBlocks = document.querySelectorAll('.dateBlock');
+  parseSchedule($) {
+    const result = [];
+    const dayBlocks = $('.dateBlock');
 
-      dayBlocks.forEach((block) => {
-        const dateElement = block.querySelector('.dateToday');
-        if (!dateElement) return;
+    dayBlocks.each((_, block) => {
+      const dateElement = $(block).find('.dateToday');
+      if (!dateElement.length) return;
 
-        const dateText = dateElement.textContent.trim();
-        const dateMatch = dateText.match(
-          /(Понедельник|Вторник|Среда|Четверг|Пятница|Суббота|Воскресенье),\s*(\d{2}\.\d{2}\.\d{4})/,
-        );
-        if (!dateMatch) return;
+      const dateText = dateElement.text().trim();
+      const dateMatch = dateText.match(
+        /(Понедельник|Вторник|Среда|Четверг|Пятница|Суббота|Воскресенье),\s*(\d{2}\.\d{2}\.\d{4})/,
+      );
+      if (!dateMatch) return;
 
-        const dayData = {
-          dayName: dateMatch[1],
-          date: dateMatch[2],
-          classes: [],
-        };
+      const dayData = {
+        dayName: dateMatch[1],
+        date: dateMatch[2],
+        classes: [],
+      };
 
-        const lessons = block.querySelectorAll('.disciplina_cont');
-        lessons.forEach((lesson) => {
-          const timeElement = lesson.querySelector('.disciplina_time');
-          const startTime = timeElement?.querySelector('p')?.textContent.trim() || '';
-          const endTime = timeElement?.querySelector('.end-time')?.textContent.trim() || '';
+      $(block)
+        .find('.disciplina_cont')
+        .each((_, lesson) => {
+          const timeElement = $(lesson).find('.disciplina_time');
+          const startTime = timeElement.find('p').text().trim();
+          const endTime = timeElement.find('.end-time').text().trim();
 
-          const infoElement = lesson.querySelector('.disciplina_info');
-          const type = infoElement?.querySelector('.predmet-type')?.textContent.trim() || '';
-          const subject = infoElement?.querySelector('p')?.textContent.trim() || '';
+          const infoElement = $(lesson).find('.disciplina_info');
+          const type = infoElement.find('.predmet-type').text().trim();
+          const subject = infoElement.find('p').text().trim();
 
-          const groups = Array.from(lesson.querySelectorAll('.allgroup a.view-link')).map((el) => {
-            return el.textContent.trim();
-          });
+          const groups = infoElement
+            .find('.allgroup a.view-link')
+            .map((_, el) => $(el).text().trim())
+            .get();
 
-          const classrooms = Array.from(infoElement?.querySelectorAll('.auditioria') || []).map(
-            (el) => {
-              const clone = el.cloneNode(true);
-              clone.querySelector('i')?.remove();
-              clone.querySelector('.pg')?.remove();
-              clone.querySelector('.subgroup')?.remove();
-              return clone.textContent.trim();
-            },
-          );
+          const classroom = infoElement
+            .find('.auditioria')
+            .map((_, el) => {
+              const clone = $(el).clone();
+              clone.find('i, .pg, .subgroup').remove();
+              return clone.text().trim();
+            })
+            .get();
 
           dayData.classes.push({
-            time: startTime && endTime ? `${startTime}-${endTime}` : '',
+            startTime,
+            endTime,
             type,
             subject,
-            group: groups[0] || '',
-            classroom: classrooms[0] || '',
-            additionalGroup: groups[1] || '',
-            additionalClassroom: classrooms[1] || '',
+            groups,
+            classroom,
           });
         });
 
-        if (dayData.classes.length > 0) {
-          result.push(dayData);
-        }
-      });
-
-      return result;
+      if (dayData.classes.length > 0) {
+        result.push(dayData);
+      }
     });
+
+    return result;
   }
 }
 

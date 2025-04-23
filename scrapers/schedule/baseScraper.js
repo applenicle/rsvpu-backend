@@ -1,58 +1,50 @@
-const { chromium } = require('playwright');
+const axios = require('axios');
+const https = require('https');
+const cheerio = require('cheerio');
 const Logger = require('../../utils/logger');
-const { ensureDir } = require('../../utils/helpers');
-const path = require('path');
-const fs = require('fs');
 const config = require('../../config');
 
 class BaseScraper {
   constructor(type) {
     this.type = type;
-    this.browser = null;
-  }
-
-  async initializeBrowser() {
-    if (!this.browser) {
-      this.browser = await chromium.launch({
-        headless: true,
-        timeout: 60000,
-      });
-    }
-    return this.browser;
+    this.axiosInstance = axios.create({
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false,
+      }),
+      timeout: 30000,
+    });
   }
 
   async getSchedule(id) {
     try {
-      await this.initializeBrowser();
-      const page = await this.browser.newPage();
-
       const url = this.getUrl(id);
       Logger.info(`Fetching ${this.type} schedule for ID: ${id} from ${url}`);
 
-      await page.goto(url, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000,
-      });
+      const response = await this.fetchWithRetry(url, 3);
+      const $ = cheerio.load(response.data);
 
-      // Проверка на пустое расписание
-      const isEmpty = await this.isScheduleEmpty(page);
-      if (isEmpty) {
-        Logger.info(`Empty schedule for ${this.type} ID: ${id}`);
-        return [];
-      }
-
-      // Ожидание загрузки расписания
-      await this.waitForSchedule(page);
-
-      // Сохранение отладочной информации
-      await this.saveDebugContent(page, id);
-
-      // Парсинг расписания
-      const schedule = await this.parseSchedule(page);
-      return schedule;
+      return this.isScheduleEmpty($) ? [] : this.parseSchedule($);
     } catch (error) {
       Logger.error(`Error getting schedule for ${this.type} ID: ${id}`, error);
       throw error;
+    }
+  }
+
+  async fetchWithRetry(url, maxAttempts) {
+    let attempts = 0;
+    while (attempts < maxAttempts) {
+      try {
+        return await this.axiosInstance.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'ru-RU,ru;q=0.9',
+          },
+        });
+      } catch (error) {
+        attempts++;
+        if (attempts >= maxAttempts) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
     }
   }
 
@@ -60,60 +52,22 @@ class BaseScraper {
     return `${config.baseUrl}?v_${this.type === 'group' ? 'gru' : 'prep'}=${id}`;
   }
 
-  async isScheduleEmpty(page) {
+  isScheduleEmpty($) {
     try {
-      const noSchedule = await page.$('.no-schedule, .empty-schedule');
-      if (noSchedule) {
-        const message = await noSchedule.evaluate((el) => el.textContent.trim());
-        Logger.info(`Empty schedule detected: ${message}`);
+      const noScheduleElement = $('.no-schedule, .empty-schedule');
+      if (noScheduleElement.length > 0) {
+        Logger.info(`Empty schedule detected: ${noScheduleElement.text().trim()}`);
         return true;
       }
-      const hasSchedule = await page.$('.dateBlock');
-      return !hasSchedule;
+      return $('.dateBlock').length === 0;
     } catch (error) {
       Logger.error('Error checking for empty schedule', error);
       return false;
     }
   }
 
-  async waitForSchedule(page) {
-    try {
-      await page.waitForSelector('.dateBlock', {
-        timeout: 30000,
-        state: 'attached',
-      });
-    } catch (error) {
-      Logger.error('Failed to wait for schedule', error);
-      throw new Error('Schedule elements not found');
-    }
-  }
-
-  async saveDebugContent(page, id) {
-    try {
-      ensureDir(config.debugDir);
-      const debugPath = path.join(config.debugDir, `${this.type}_${id}_${Date.now()}.html`);
-      const content = await page.content();
-      fs.writeFileSync(debugPath, content);
-      Logger.info(`Debug content saved to ${debugPath}`);
-    } catch (error) {
-      Logger.error('Failed to save debug content', error);
-    }
-  }
-
-  async close() {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
-  }
-
-  async checkElementExists(page, selector) {
-    try {
-      await page.waitForSelector(selector, { timeout: 5000 });
-      return true;
-    } catch (error) {
-      return false;
-    }
+  parseSchedule($) {
+    throw new Error('parseSchedule method must be implemented');
   }
 }
 

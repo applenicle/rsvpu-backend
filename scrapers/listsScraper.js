@@ -1,71 +1,55 @@
-const { chromium } = require('playwright');
+const axios = require('axios');
+const https = require('https');
+const cheerio = require('cheerio');
 const Logger = require('../utils/logger');
 const config = require('../config');
-const { saveDebugHtml } = require('../utils/helpers');
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent(config.axiosConfig.httpsAgent),
+  timeout: config.axiosConfig.timeout,
+});
+
+async function fetchWithRetry(url, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const response = await axiosInstance.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept-Language': 'ru-RU,ru;q=0.9',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      if (i === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
 
 async function scrapeList(url, selector, type) {
-  const browser = await chromium.launch({
-    headless: true,
-    timeout: 60000,
-  });
-  const page = await browser.newPage();
-
   try {
     Logger.info(`Loading ${type} list from ${url}`);
 
-    await page.goto(url, {
-      waitUntil: 'networkidle',
-      timeout: 60000,
-    });
+    const data = await fetchWithRetry(url);
+    const $ = cheerio.load(data);
+    const items = [];
 
-    try {
-      await page.waitForSelector(selector, {
-        timeout: 30000,
-        state: 'attached',
+    $(selector).each((i, el) => {
+      items.push({
+        id: $(el).attr('data'),
+        name: $(el).text().trim(),
       });
-    } catch (error) {
-      await saveDebugHtml(page, `${type}_list_failed`);
-      Logger.error(`Elements not found for ${type} list`, error);
-      throw new Error(`Failed to find ${type} list elements`);
-    }
-
-    await saveDebugHtml(page, `${type}_list`);
-
-    const items = await page.evaluate(
-      ({ selector, type }) => {
-        const elements = Array.from(document.querySelectorAll(selector));
-        return elements.map((el) => {
-          const id = el.getAttribute('data');
-          const name = el.textContent.trim();
-          return {
-            id,
-            name,
-            url: `?v_${type === 'gru' ? 'gru' : 'prep'}=${id}`,
-          };
-        });
-      },
-      { selector, type },
-    );
+    });
 
     Logger.info(`Found ${items.length} ${type} items`);
     return items;
   } catch (error) {
-    Logger.error(`Error scraping ${type} list`, error);
+    Logger.error(`Error scraping ${type} list: ${error.message}`);
     throw error;
-  } finally {
-    await browser.close();
   }
 }
 
-async function scrapeGroupsList() {
-  return await scrapeList(config.groupsListUrl, 'div[name="gr"]', 'gru');
-}
-
-async function scrapeTeachersList() {
-  return await scrapeList(config.teachersListUrl, 'div[name="prep"]', 'prep');
-}
-
 module.exports = {
-  scrapeGroupsList,
-  scrapeTeachersList,
+  scrapeGroupsList: () => scrapeList(config.groupsListUrl, 'div[name="gr"]', 'gr'),
+  scrapeTeachersList: () => scrapeList(config.teachersListUrl, 'div[name="prep"]', 'prep'),
 };

@@ -4,6 +4,7 @@ const cacheService = require('./services/cacheService');
 const apiRoutes = require('./routes/apiRoutes');
 const config = require('./config');
 const Logger = require('./utils/logger');
+const https = require('https');
 
 const app = express();
 
@@ -16,7 +17,6 @@ app.use((req, res, next) => {
 
 app.use('/api', apiRoutes);
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
@@ -25,7 +25,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   Logger.error('Server error', err);
   res.status(500).json({
@@ -35,7 +34,36 @@ app.use((err, req, res, next) => {
   });
 });
 
+async function checkSSLCertificate() {
+  const target = new URL(config.groupsListUrl);
+  return new Promise((resolve) => {
+    const req = https.request(
+      {
+        hostname: target.hostname,
+        port: 443,
+        method: 'HEAD',
+        agent: new https.Agent({ rejectUnauthorized: false }),
+      },
+      (res) => {
+        resolve(true);
+      },
+    );
+
+    req.on('error', (e) => {
+      Logger.warn(`SSL certificate error: ${e.message}`);
+      resolve(false);
+    });
+
+    req.end();
+  });
+}
+
 async function startServer() {
+  const sslValid = await checkSSLCertificate();
+  if (!sslValid) {
+    Logger.warn('Using insecure SSL connection');
+    config.axiosConfig.httpsAgent.rejectUnauthorized = false;
+  }
   try {
     Logger.info('Initializing CacheService...');
     const cacheInitialized = await cacheService.init();
@@ -44,7 +72,6 @@ async function startServer() {
       Logger.warn('CacheService initialized with errors, some functionality may be limited');
     }
 
-    // Scheduled cache update
     const updateInterval = setInterval(async () => {
       try {
         Logger.info('Scheduled cache update started');
@@ -54,11 +81,9 @@ async function startServer() {
       }
     }, config.cacheUpdateInterval);
 
-    // Cleanup on exit
     process.on('SIGINT', async () => {
       Logger.info('Shutting down server...');
       clearInterval(updateInterval);
-      await cacheService.cleanup();
       process.exit(0);
     });
 
