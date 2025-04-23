@@ -3,53 +3,50 @@ const https = require('https');
 const cheerio = require('cheerio');
 const Logger = require('../utils/logger');
 const config = require('../config');
+const agent = new https.Agent(config.httpsAgentOptions);
 
-const axiosInstance = axios.create({
-  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-  timeout: 10000,
-});
+async function fetchData(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeout);
 
-async function fetchWithRetry(url, attempts = 3) {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const response = await axiosInstance.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept-Language': 'ru-RU,ru;q=0.9',
-        },
-      });
-      return response.data;
-    } catch (error) {
-      if (i === attempts - 1) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-  }
-}
-
-async function scrapeList(url, selector, type) {
   try {
-    Logger.info(`Loading ${type} list from ${url}`);
-
-    const data = await fetchWithRetry(url);
-    const $ = cheerio.load(data);
-    const items = [];
-
-    $(selector).each((i, el) => {
-      items.push({
-        id: $(el).attr('data'),
-        name: $(el).text().trim(),
-      });
+    const response = await axios.get(url, {
+      httpsAgent: agent,
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept-Language': 'ru-RU,ru',
+      },
     });
-
-    Logger.info(`Found ${items.length} ${type} items`);
-    return items;
+    clearTimeout(timeout);
+    return response.data;
   } catch (error) {
-    Logger.error(`Error scraping ${type} list: ${error.message}`);
+    clearTimeout(timeout);
     throw error;
   }
 }
 
 module.exports = {
-  scrapeGroupsList: () => scrapeList(config.groupsListUrl, 'div[name="gr"]', 'gr'),
-  scrapeTeachersList: () => scrapeList(config.teachersListUrl, 'div[name="prep"]', 'prep'),
+  scrapeGroupsList: () => fetchData(config.groupsListUrl).then(parseGroups),
+  scrapeTeachersList: () => fetchData(config.teachersListUrl).then(parseTeachers),
 };
+
+function parseGroups(html) {
+  const $ = cheerio.load(html);
+  return $('div[name="gr"]')
+    .map((i, el) => ({
+      id: $(el).attr('data'),
+      name: $(el).text().trim(),
+    }))
+    .get();
+}
+
+function parseTeachers(html) {
+  const $ = cheerio.load(html);
+  return $('div[name="prep"]')
+    .map((i, el) => ({
+      id: $(el).attr('data'),
+      name: $(el).text().trim(),
+    }))
+    .get();
+}
