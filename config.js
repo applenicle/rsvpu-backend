@@ -1,7 +1,7 @@
 const path = require('path');
 
 module.exports = {
-  port: 3001,
+  port: 3000,
   baseUrl: 'https://old.rsvpu.ru/mobile/',
   groupsListUrl: 'https://old.rsvpu.ru/mobile/?groups',
   teachersListUrl: 'https://old.rsvpu.ru/mobile/?prep',
@@ -16,10 +16,5 @@ module.exports = {
     httpsAgent: {
       rejectUnauthorized: false,
     },
-  },
-  proxy: {
-    host: '91.238.52.247',
-    port: 8080,
-    protocol: 'http',
   },
 };

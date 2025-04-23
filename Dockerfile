@@ -4,5 +4,5 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 RUN mkdir -p /app/data
-EXPOSE 3001
+EXPOSE 3000
 CMD ["npm", "start"]
