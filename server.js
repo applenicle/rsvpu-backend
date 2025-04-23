@@ -1,7 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const https = require('https');
-const axios = require('axios');
 const cacheService = require('./services/cacheService');
 const apiRoutes = require('./routes/apiRoutes');
 const config = require('./config');
@@ -9,95 +7,91 @@ const Logger = require('./utils/logger');
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// Улучшенная обработка CORS
+app.use(
+  cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type'],
+  }),
+);
+
+app.use(express.json({ limit: '10mb' }));
+
+// Логирование всех запросов
 app.use((req, res, next) => {
-  Logger.info(`${req.method} ${req.url}`);
+  Logger.info(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
+// Роуты API
 app.use('/api', apiRoutes);
 
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    cacheInitialized: cacheService.isInitialized,
-    lastUpdated: cacheService.cache?.lastUpdated || null,
+// Обработка favicon
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// Health Check с проверкой кеша
+app.get('/health', async (req, res) => {
+  try {
+    const healthStatus = {
+      status: 'OK',
+      cacheStatus: cacheService.isInitialized ? 'ready' : 'initializing',
+      lastUpdated: cacheService.cache?.lastUpdated || null,
+      uptime: process.uptime(),
+    };
+    res.status(200).json(healthStatus);
+  } catch (err) {
+    res.status(503).json({ status: 'SERVICE_UNAVAILABLE' });
+  }
+});
+
+// Обработка 502 ошибки
+app.use((req, res, next) => {
+  res.status(502).json({
+    success: false,
+    error: 'Bad Gateway',
+    message: 'Сервер временно недоступен. Попробуйте позже.',
   });
 });
 
+// Обработка других ошибок
 app.use((err, req, res, next) => {
-  Logger.error('Server error:', err);
+  Logger.error(`[ERROR] ${err.stack}`);
   res.status(500).json({
     success: false,
-    error: 'Internal server error',
-    message: err.message,
+    error: 'Internal Server Error',
   });
 });
 
-const httpsAgent = new https.Agent({
-  rejectUnauthorized: config.httpsAgentOptions?.rejectUnauthorized ?? false,
-  timeout: config.httpsAgentOptions?.timeout ?? 60000,
-  keepAlive: true,
-});
-
-async function checkRSVPUConnection() {
+// Запуск сервера с улучшенной обработкой
+const startServer = async () => {
   try {
-    const response = await axios.head(config.baseUrl, {
-      httpsAgent,
-      timeout: 10000,
-    });
-    Logger.info(`RSVPU connection check: ${response.status}`);
-    return true;
-  } catch (error) {
-    Logger.warn(`RSVPU connection failed: ${error.message}`);
-    return false;
-  }
-}
-
-async function startServer() {
-  try {
-    Logger.info('Starting server initialization...');
-    const isConnected = await checkRSVPUConnection();
-    if (!isConnected) {
-      Logger.warn('Running in offline mode - some functionality may be limited');
-    }
-    Logger.info('Initializing cache service...');
-    await cacheService.init();
-    const updateInterval = setInterval(async () => {
+    // Инициализация кеша с повторными попытками
+    let retries = 3;
+    while (retries > 0) {
       try {
-        if (await checkRSVPUConnection()) {
-          await cacheService.updateCache();
-        }
+        await cacheService.init();
+        break;
       } catch (err) {
-        Logger.error('Scheduled cache update failed:', err);
+        retries--;
+        if (retries === 0) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-    }, config.cacheUpdateInterval);
-    process.on('SIGINT', () => {
-      clearInterval(updateInterval);
-      Logger.info('Server shutting down...');
-      process.exit(0);
+    }
+
+    const server = app.listen(config.port, () => {
+      Logger.info(`Сервер запущен на порту ${config.port}`);
     });
-    app.listen(config.port, () => {
-      Logger.info(`Server successfully started on port ${config.port}`);
-      Logger.info('Available endpoints:');
-      Logger.info('GET /api/groups - List all groups');
-      Logger.info('GET /api/teachers - List all teachers');
-      Logger.info('GET /api/group/:id/schedule - Group schedule');
-      Logger.info('GET /api/teacher/:id/schedule - Teacher schedule');
-      Logger.info('GET /health - Server health check');
+
+    // Обработка ошибок сервера
+    server.on('error', (err) => {
+      Logger.error(`Server error: ${err.message}`);
+      process.exit(1);
     });
   } catch (error) {
-    Logger.error('Server startup failed:', error);
+    Logger.error(`Не удалось запустить сервер: ${error.message}`);
     process.exit(1);
   }
-}
-process.on('unhandledRejection', (err) => {
-  Logger.error('Unhandled rejection:', err);
-});
+};
 
-process.on('uncaughtException', (err) => {
-  Logger.error('Uncaught exception:', err);
-  process.exit(1);
-});
 startServer();

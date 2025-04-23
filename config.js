@@ -1,7 +1,7 @@
 const path = require('path');
 
 module.exports = {
-  port: 3001,
+  port: 3000,
   baseUrl: 'https://old.rsvpu.ru/mobile/',
   groupsListUrl: 'https://old.rsvpu.ru/mobile/?groups',
   teachersListUrl: 'https://old.rsvpu.ru/mobile/?prep',

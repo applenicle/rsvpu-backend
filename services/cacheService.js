@@ -1,53 +1,65 @@
 const fs = require('fs');
 const path = require('path');
 const Logger = require('../utils/logger');
-const { ensureDir } = require('../utils/helpers');
 const config = require('../config');
 const { scrapeGroupsList, scrapeTeachersList } = require('../scrapers/listsScraper');
-const GroupScraper = require('../scrapers/schedule/groupScraper');
-const TeacherScraper = require('../scrapers/schedule/teacherScraper');
 
 class CacheService {
   constructor() {
     this.cache = {
-      lastUpdated: null,
       groups: [],
       teachers: [],
+      lastUpdated: null,
     };
-    this.groupScraper = new GroupScraper();
-    this.teacherScraper = new TeacherScraper();
     this.isInitialized = false;
-    this.initializationPromise = null;
+    this.initializationAttempts = 0;
+    this.MAX_ATTEMPTS = 3;
   }
+
   async init() {
-    if (this.initializationPromise) {
-      return this.initializationPromise;
-    }
-    this.initializationPromise = (async () => {
-      try {
-        ensureDir(config.dataDir);
-        try {
-          await this.loadCache();
-          Logger.info('Cache loaded successfully');
-        } catch (loadError) {
-          Logger.warn('Failed to load cache, will fetch fresh data', loadError);
-        }
-        if (this.isEmpty() || this.isCacheStale()) {
-          Logger.info('Cache needs update, fetching fresh data');
-          await this.updateCache();
-        } else {
-          Logger.info('Using existing cache');
-        }
-        this.isInitialized = true;
-        Logger.info('CacheService initialized successfully');
-        return true;
-      } catch (error) {
-        Logger.error('CacheService initialization failed', error);
+    try {
+      if (this.initializationAttempts >= this.MAX_ATTEMPTS) {
+        Logger.warn('Достигнуто максимальное количество попыток инициализации');
         this.isInitialized = false;
-        throw error;
+        return;
       }
-    })();
-    return this.initializationPromise;
+      this.initializationAttempts++;
+      Logger.info(`Попытка инициализации кеша #${this.initializationAttempts}`);
+      await this.loadCacheFromFile();
+      if (this.isEmpty() || this.isCacheStale()) {
+        Logger.info('Кеш требует обновления');
+        await this.updateCache();
+      } else {
+        Logger.info('Используется существующий кеш');
+      }
+      this.isInitialized = true;
+      Logger.info('Кеш успешно инициализирован');
+    } catch (error) {
+      Logger.error(`Ошибка инициализации кеша: ${error.message}`);
+      if (this.initializationAttempts < this.MAX_ATTEMPTS) {
+        const delay = 5000;
+        Logger.warn(`Повторная попытка через ${delay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.init();
+      }
+      Logger.error('Не удалось инициализировать кеш после всех попыток');
+      this.isInitialized = false;
+    }
+  }
+  async loadCacheFromFile() {
+    const cachePath = path.join(config.dataDir, config.cacheFile);
+    if (!fs.existsSync(cachePath)) {
+      Logger.warn('Файл кеша не найден, будет создан новый');
+      return;
+    }
+    try {
+      const data = fs.readFileSync(cachePath, 'utf8');
+      this.cache = JSON.parse(data);
+      Logger.info(`Кеш загружен из файла: ${cachePath}`);
+    } catch (error) {
+      Logger.error(`Ошибка загрузки кеша: ${error.message}`);
+      throw error;
+    }
   }
   async fetchWithRetry(url, attempts = 3) {
     for (let i = 0; i < attempts; i++) {
